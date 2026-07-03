@@ -1,0 +1,37 @@
+databases:
+  - name: eval-guestbook-db
+    plan: free
+    region: oregon
+
+services:
+  - type: web            # backend API
+    runtime: node
+    name: eval-guestbook-api
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    preDeployCommand: node migrate.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: eval-guestbook-db
+          property: connectionString
+
+  - type: web            # frontend (serves page + proxies /api/*)
+    runtime: node
+    name: eval-guestbook-web
+    plan: free
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: API_URL
+        fromService:
+          name: eval-guestbook-api
+          type: web
+          property: host
