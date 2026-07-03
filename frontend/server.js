@@ -3,7 +3,11 @@
 const path = require('path');
 const express = require('express');
 
-const API_URL = (process.env.API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+// Tolerate whatever form API_URL is set to (imperative create sets a full https URL;
+// a blueprint `fromService property:host` would yield a scheme-less hostname).
+let _apiUrl = (process.env.API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+if (!/^https?:\/\//.test(_apiUrl)) _apiUrl = 'https://' + _apiUrl;
+const API_URL = _apiUrl;
 
 const app = express();
 

@@ -13,12 +13,28 @@ if (!DATABASE_URL) {
 // SSL only for Render external hosts (*.render.com); internal host needs no SSL.
 const useSsl = /\.render\.com/.test(DATABASE_URL);
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// A brand-new free Postgres may not accept connections yet on first boot.
+async function connectWithRetry(client, attempts = 12, delayMs = 3000) {
+  for (let i = 1; i <= attempts; i += 1) {
+    try {
+      await client.connect();
+      return;
+    } catch (err) {
+      if (i === attempts) throw err;
+      console.log(`db not ready (attempt ${i}/${attempts}): ${err.message}; retrying in ${delayMs}ms`);
+      await sleep(delayMs);
+    }
+  }
+}
+
 async function main() {
   const client = new Client({
     connectionString: DATABASE_URL,
     ssl: useSsl ? { rejectUnauthorized: false } : false,
   });
-  await client.connect();
+  await connectWithRetry(client);
 
   await client.query(
     'create table if not exists schema_migrations (filename text primary key, applied_at timestamptz default now())'

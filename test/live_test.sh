@@ -19,9 +19,22 @@ fail() { echo "FAIL: $1"; FAILED=1; }
 echo "Base URL: $BASE"
 echo "Marker:   $MARKER"
 
+# --- Step 0: wake the (free-tier, spun-down) services before asserting ---
+# Frontend and backend can cold-start sequentially (60-120s). Warm the full
+# path via the proxied /api/entries until it answers 200, so a cold start
+# doesn't read as a failure.
+echo "Warming services (up to ~2m)..."
+warm=0
+for i in $(seq 1 30); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BASE/api/entries" || echo 000)
+  if [ "$code" = "200" ]; then warm=1; echo "warm after ${i} tries (HTTP 200)"; break; fi
+  sleep 4
+done
+[ "$warm" -eq 1 ] || echo "WARN: services did not warm to 200; continuing to assert anyway"
+
 # --- Step 1: POST a new entry, expect HTTP 201 ---
 POST_BODY="{\"name\":\"eval-bot\",\"message\":\"$MARKER\"}"
-POST_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+POST_STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 --retry 2 --retry-all-errors --retry-delay 3 \
   -X POST "$BASE/api/entries" \
   -H 'Content-Type: application/json' \
   -d "$POST_BODY")
@@ -33,7 +46,7 @@ else
 fi
 
 # --- Step 2: GET the list, expect marker present ---
-GET1=$(curl -s -w '\n%{http_code}' "$BASE/api/entries")
+GET1=$(curl -s -w '\n%{http_code}' --max-time 30 --retry 2 --retry-all-errors --retry-delay 3 "$BASE/api/entries")
 GET1_STATUS=$(printf '%s' "$GET1" | tail -n1)
 GET1_BODY=$(printf '%s' "$GET1" | sed '$d')
 
@@ -50,7 +63,7 @@ else
 fi
 
 # --- Step 3: second fresh GET, assert marker still present (persistence) ---
-GET2_BODY=$(curl -s "$BASE/api/entries")
+GET2_BODY=$(curl -s --max-time 30 --retry 2 --retry-all-errors --retry-delay 3 "$BASE/api/entries")
 if printf '%s' "$GET2_BODY" | grep -q "$MARKER"; then
   pass "marker still present on fresh GET (persistence)"
 else
