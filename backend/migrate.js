@@ -16,12 +16,18 @@ const useSsl = /\.render\.com/.test(DATABASE_URL);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A brand-new free Postgres may not accept connections yet on first boot.
-async function connectWithRetry(client, attempts = 12, delayMs = 3000) {
+// pg Clients can't be reused after a failed connect(), so build a fresh one each try.
+async function connectWithRetry(attempts = 12, delayMs = 3000) {
   for (let i = 1; i <= attempts; i += 1) {
+    const client = new Client({
+      connectionString: DATABASE_URL,
+      ssl: useSsl ? { rejectUnauthorized: false } : false,
+    });
     try {
       await client.connect();
-      return;
+      return client;
     } catch (err) {
+      try { await client.end(); } catch (_) { /* ignore */ }
       if (i === attempts) throw err;
       console.log(`db not ready (attempt ${i}/${attempts}): ${err.message}; retrying in ${delayMs}ms`);
       await sleep(delayMs);
@@ -30,11 +36,7 @@ async function connectWithRetry(client, attempts = 12, delayMs = 3000) {
 }
 
 async function main() {
-  const client = new Client({
-    connectionString: DATABASE_URL,
-    ssl: useSsl ? { rejectUnauthorized: false } : false,
-  });
-  await connectWithRetry(client);
+  const client = await connectWithRetry();
 
   await client.query(
     'create table if not exists schema_migrations (filename text primary key, applied_at timestamptz default now())'
