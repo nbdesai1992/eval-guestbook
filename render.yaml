@@ -13,7 +13,9 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
-    preDeployCommand: node migrate.js
+    # Free tier: pre-deploy commands are unsupported, so migrations run at boot
+    # via `npm start` = `node migrate.js && node server.js` (idempotent, tracked in
+    # schema_migrations). Not CREATE TABLE IF NOT EXISTS — the numbered-SQL runner.
     envVars:
       - key: DATABASE_URL
         fromDatabase:
